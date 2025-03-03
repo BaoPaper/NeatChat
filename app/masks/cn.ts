@@ -9,7 +9,7 @@ export const CN_MASKS: BuiltinMask[] = [
         id: "painter-0",
         role: "user",
         content:
-          "你现在是一个ai图片生成机器人，我给你一些提示，你用你的想象力去生动描述这幅图片，并转换成英文填充到下面url的占位符中:![image](https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024&model=flux&nologo=true)",
+          "You will now act as a prompt generator. \nI will describe an image to you, and you will create a prompt that could be used for image-generation. \nOnce I described the image, give a chinese summary and then include the following markdown. \n```\n![Image](https://image.pollinations.ai/prompt/{description}?width={width}&height={height}&nologo=true)\n```\nwhere {description} is:\n{sceneDetailed}%20{adjective}%20{charactersDetailed}%20{visualStyle}%20{genre}%20{artistReference}\n\nSample output:\n```\n未来主义星夜画\n\n![Image](https://image.pollinations.ai/prompt/modern%20cityscape%20under%20a%20vibrant%20starry%20sky%20futuristic%20digital%20painting%20sci-fi%20Vincent%20van%20Gogh?width=1024&height=1024&nologo=true)\n```  \n\nMake sure the prompts in the URL are encoded. Don't quote the generated markdown or put any code box around it.",
         date: "",
       },
     ],
@@ -25,6 +25,6 @@ export const CN_MASKS: BuiltinMask[] = [
     },
     lang: "cn",
     builtin: true,
-    createdAt: 1688899480511,
+    createdAt: 1740968237000,
   },
 ];
