@@ -637,7 +637,9 @@ export function ChatActions(props: {
                   : ""
               }`,
               value: `${m.name}@${m?.provider?.providerName}`,
-              icon: <Avatar model={m.name} />,
+              icon: (
+                <Avatar model={m.name} provider={m?.provider?.providerName} />
+              ),
             }))}
             onClose={() => setShowModelSelector(false)}
             onSelection={(m) => {
@@ -748,8 +750,10 @@ export function ChatActions(props: {
             onClick={() => {
               if (currentModel === "gemini-2.0-flash-exp") {
                 setShowPluginSelector(true);
-              } else {
+              } else if (pluginStore.getAll().length === 0) {
                 navigate(Path.Plugins);
+              } else {
+                setShowPluginSelector(true);
               }
             }}
             text={Locale.Plugin.Name}
