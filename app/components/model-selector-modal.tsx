@@ -80,6 +80,9 @@ export function ModelSelectorModal(props: {
     Record<string, string>
   >(DEFAULT_SYSTEM_CATEGORY_PATTERNS);
 
+  // 添加一个状态来跟踪当前选择的超时时间
+  const [testTimeout, setTestTimeout] = useState(5);
+
   // 在组件初始化时，尝试从本地存储加载系统类别匹配规则
   useEffect(() => {
     try {
@@ -672,28 +675,71 @@ export function ModelSelectorModal(props: {
     }
   };
 
+  // 添加一个函数来判断是否使用服务端测试
+  const shouldUseServerTest = () => {
+    // 如果用户没有设置自定义API配置，则使用服务端测试
+    return !accessStore.useCustomConfig;
+  };
+
   // 修改单独测试模型的函数
   const testSingleModel = async (modelId: string) => {
-    // 检查是否有API密钥
-    if (!accessStore.openaiApiKey) {
-      showToast(Locale.Settings.Access.CustomModel.ApiKeyRequired);
-      return;
-    }
-
     showToast(`开始测试模型: ${modelId}...`);
 
     try {
-      // 获取API基础URL
-      const baseUrl = accessStore.openaiUrl || "https://api.openai.com";
+      let result: Record<string, ModelTestResult> = {};
 
-      // 测试模型，传入false以禁止显示开始测试的提示
-      const result = await testModels(
-        [modelId],
-        accessStore.openaiApiKey,
-        baseUrl,
-        5, // 默认超时时间
-        false, // 不显示开始测试的提示，避免重复
-      );
+      if (shouldUseServerTest()) {
+        // 使用服务端测试
+        const response = await fetch("/api/model-test", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            models: [modelId],
+            timeoutSeconds: testTimeout,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`服务端测试失败: ${response.status}`);
+        }
+
+        const data = await response.json();
+        result = data.results;
+
+        // 显示测试结果消息
+        if (result[modelId]) {
+          if (result[modelId].success) {
+            showToast(
+              `${modelId}: 测试成功 (${(
+                (result[modelId].responseTime || 0) / 1000
+              ).toFixed(2)}s)`,
+            );
+          } else if (result[modelId].timeout) {
+            showToast(`${modelId}: 超时`);
+          } else {
+            // 显示详细的错误消息
+            const errorMessage = result[modelId].message || "测试失败";
+            showToast(`${modelId}: ${errorMessage}`);
+          }
+        }
+      } else {
+        // 使用客户端测试
+        if (!accessStore.openaiApiKey) {
+          showToast(Locale.Settings.Access.CustomModel.ApiKeyRequired);
+          return;
+        }
+
+        const baseUrl = accessStore.openaiUrl || "https://api.openai.com";
+        result = await testModels(
+          [modelId],
+          accessStore.openaiApiKey,
+          baseUrl,
+          testTimeout,
+          false, // 不显示开始测试的提示
+        );
+      }
 
       // 更新模型列表
       const updatedModels = models.map((model) => {
@@ -785,10 +831,18 @@ export function ModelSelectorModal(props: {
             key="test-models"
             models={filteredModels.map((m) => m.id)}
             onTestComplete={(results: Record<string, ModelTestResult>) => {
-              // 更新模型列表，标记测试结果
+              // 保留现有的完整更新逻辑
+              // ...
+            }}
+            onModelTested={(
+              modelId: string,
+              result: ModelTestResult,
+              allResults?: Record<string, ModelTestResult>,
+            ) => {
+              // 创建更新后的模型列表，确保保留所有已测试模型的状态
               const updatedModels = models.map((model) => {
-                const result = results[model.id];
-                if (result) {
+                // 如果是当前测试的模型，更新其状态
+                if (model.id === modelId) {
                   return {
                     ...model,
                     tested: true,
@@ -797,9 +851,24 @@ export function ModelSelectorModal(props: {
                     timeout: result.timeout || false,
                   };
                 }
+
+                // 如果提供了所有结果，并且当前模型在结果中，也更新其状态
+                if (allResults && allResults[model.id]) {
+                  const modelResult = allResults[model.id];
+                  return {
+                    ...model,
+                    tested: true,
+                    available: modelResult.success,
+                    responseTime: modelResult.responseTime || 0,
+                    timeout: modelResult.timeout || false,
+                  };
+                }
+
+                // 否则保持原状态
                 return model;
               });
 
+              // 直接设置状态
               setModels(updatedModels);
 
               // 保存到本地存储
@@ -812,6 +881,9 @@ export function ModelSelectorModal(props: {
                 console.error("更新本地存储失败:", error);
               }
             }}
+            onTimeoutChange={(value) => setTestTimeout(value)}
+            initialTimeout={testTimeout}
+            useServerTest={!accessStore.useCustomConfig}
           />,
           <div key="spacer" style={{ flex: 1 }}></div>,
           <IconButton
@@ -943,33 +1015,41 @@ export function ModelSelectorModal(props: {
                         <span className={styles.modelSelectorModelName}>
                           {model.id}
                         </span>
-                        {model.tested && (
-                          <span
-                            className={
-                              styles.modelResponseTime +
-                              " " +
-                              (model.available
-                                ? getResponseTimeClass(model.responseTime || 0)
-                                : model.timeout
-                                ? styles.modelTimeout
-                                : styles.modelUnavailable)
-                            }
-                            onClick={(e) => {
-                              e.stopPropagation(); // 阻止事件冒泡
-                              testSingleModel(model.id);
-                            }}
-                            style={{ cursor: "pointer" }}
-                            title="点击重新测试此模型"
-                          >
-                            {model.available
+                        <span
+                          className={
+                            model.tested
+                              ? styles.modelResponseTime +
+                                " " +
+                                (model.available
+                                  ? getResponseTimeClass(
+                                      model.responseTime || 0,
+                                    )
+                                  : model.timeout
+                                  ? styles.modelTimeout
+                                  : styles.modelUnavailable)
+                              : styles.modelTestButton
+                          }
+                          onClick={(e) => {
+                            e.stopPropagation(); // 阻止事件冒泡
+                            testSingleModel(model.id);
+                          }}
+                          style={{ cursor: "pointer" }}
+                          title={
+                            model.tested
+                              ? "点击重新测试此模型"
+                              : "点击测试此模型"
+                          }
+                        >
+                          {model.tested
+                            ? model.available
                               ? `${((model.responseTime || 0) / 1000).toFixed(
                                   2,
                                 )}s`
                               : model.timeout
                               ? "超时"
-                              : "失败"}
-                          </span>
-                        )}
+                              : "失败"
+                            : "测试"}
+                        </span>
                       </div>
                     )}
 
